@@ -19,9 +19,10 @@ jobs:
         platform: x64
 
     - name: Compile EXE
-      run: |
-        g++ manualmapdetector.cpp -o manualmapdetector.exe
-
+  run: |
+    g++ manualmapdetector.cpp -o manualmapdetector.exe ^
+    -lwintrust -liphlpapi -lws2_32 -mconsole
+    
     - name: Create release folder
       run: |
         mkdir release
