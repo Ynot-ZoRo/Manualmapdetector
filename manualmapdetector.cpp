@@ -1,6 +1,3 @@
-ections (IPv4)\n");
-    return 0;
-}
 // PIDsDetectorPro.cpp by Ynot-ZoRo
 //
 // Escanea todos los procesos accesibles y les asigna una puntuación basada en múltiples
