@@ -21,7 +21,10 @@ jobs:
 
     - name: Compile EXE
       shell: msys2 {0}
-      run: g++ manualmapdetector.cpp -o manualmapdetector.exe -lwintrust -liphlpapi -lws2_32 -mconsole
+      run: |
+        g++ manualmapdetector.cpp -o manualmapdetector.exe \
+        -lwintrust -liphlpapi -lws2_32 \
+        -Wl,-subsystem,console
 
     - name: Create release folder
       run: |
