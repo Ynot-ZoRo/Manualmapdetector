@@ -15,36 +15,30 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
+    - name: Fix Unicode issues in source
+      run: |
+        echo "Fixing Unicode string literals in manualmapdetector.cpp..."
+        powershell -Command "(Get-Content manualmapdetector.cpp) -replace 'LookupPrivilegeValue\(nullptr,\s*\"([^\"]+)\"', 'LookupPrivilegeValue(nullptr, L\"$1\"' | Set-Content manualmapdetector.cpp"
+        echo "Fixed!"
+      shell: cmd
+    
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
     
-    - name: Compile executable with correct settings
+    - name: Compile executable
       run: |
         echo "Compiling manualmapdetector.cpp..."
-        cl /EHsc /MT /D_UNICODE /DUNICODE /Fe:manualmapdetector.exe manualmapdetector.cpp
+        cl /EHsc /MT /Fe:manualmapdetector.exe manualmapdetector.cpp advapi32.lib
       shell: cmd
     
-    - name: Try alternative compilation if failed
-      if: failure()
-      run: |
-        echo "Trying with different settings..."
-        cl /EHsc /MT /D_UNICODE /Fe:manualmapdetector.exe manualmapdetector.cpp /link user32.lib advapi32.lib
-      shell: cmd
-    
-    - name: Try without Unicode
-      if: failure()
-      run: |
-        echo "Trying without Unicode..."
-        cl /EHsc /MT /Fe:manualmapdetector.exe manualmapdetector.cpp
-      shell: cmd
-    
-    - name: Check if compiled successfully
+    - name: Verify build
       run: |
         if exist manualmapdetector.exe (
           echo "✓ Build successful!"
           dir manualmapdetector.exe
         ) else (
-          echo "✗ Build failed"
+          echo "✗ Build failed - checking for any exe"
+          dir *.exe
           exit 1
         )
       shell: cmd
@@ -63,7 +57,7 @@ jobs:
         name: Release ${{ github.ref_name }}
         tag_name: ${{ github.ref_name }}
         files: |
-          manualmpdetector.exe
+          manualmapdetector.exe
           SHA256.txt
         body: |
           ## Release ${{ github.ref_name }}
@@ -71,8 +65,5 @@ jobs:
           ### Self-contained Windows executable
           - Compiled with MSVC /MT (static linking)
           - SHA256 checksum included
-          
-          ### Usage:
-          Run `manualmapdetector.exe` from command line
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
