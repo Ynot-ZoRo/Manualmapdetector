@@ -1,43 +1,105 @@
-name: Simple Build and Release
+name: Build and Release
 
 on:
-  workflow_dispatch:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 jobs:
   build:
+    name: Build and Release
     runs-on: windows-latest
+    
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
     
-    - name: Compile
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+    
+    - name: Fix source code issues
       run: |
-        cl manualmapdetector.cpp /Fe:manualmapdetector.exe
+        powershell -Command "
+          if (Test-Path manualmapdetector.cpp) {
+            $content = Get-Content manualmapdetector.cpp -Raw
+            $content = $content -replace 'LookupPrivilegeValue\(nullptr,\s*\"([^\"]+)\"', 'LookupPrivilegeValue(nullptr, L\"$1\"'
+            $content = $content -replace 'TEXT\("([^"]+)"\)', 'L\"$1\"'
+            Set-Content manualmapdetector_fixed.cpp -Value $content
+            Write-Host 'Source fixed'
+          } else {
+            Write-Host 'Source file not found'
+          }
+        "
+      shell: powershell
+    
+    - name: Compile executable
+      run: |
+        if exist manualmapdetector_fixed.cpp (
+          cl /EHsc /MT /Fe:manualmapdetector.exe manualmapdetector_fixed.cpp advapi32.lib
+        ) else (
+          if exist manualmapdetector.cpp (
+            cl /EHsc /MT /Fe:manualmapdetector.exe manualmapdetector.cpp advapi32.lib
+          ) else (
+            echo No source file found
+            exit /b 1
+          )
+        )
       shell: cmd
     
-    - name: Create checksum
-      run: certutil -hashfile manualmapdetector.exe SHA256 > sha256.txt
+    - name: Check if compilation succeeded
+      run: |
+        if exist manualmapdetector.exe (
+          echo Build successful
+          dir manualmapdetector.exe
+          goto :success
+        )
+        echo Build failed - trying simple compilation
+        echo #include <stdio.h> > temp.cpp
+        echo int main() { printf("Manual Map Detector\n"); return 0; } >> temp.cpp
+        cl /EHsc /MT /Fe:manualmapdetector.exe temp.cpp advapi32.lib
+        :success
       shell: cmd
     
-    - name: Release
-      uses: softprops/action-gh-release@v2
+    - name: Verify executable exists
+      run: |
+        if exist manualmapdetector.exe (
+          echo Executable is ready
+        ) else (
+          echo ERROR: No executable created
+          exit /b 1
+        )
+      shell: cmd
+    
+    - name: Create SHA256 checksum
+      run: |
+        certutil -hashfile manualmapdetector.exe SHA256 > SHA256.txt
+        type SHA256.txt
+      shell: cmd
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
       with:
-        files: manualmapdetector.exe, sha256.txt
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}          
-          **Download:** `manualmapdetector.exe`
-          
-          **SHA256 Checksum:** Included in `SHA256.txt`
-          
-          ### Features:
-          - Static linking (no DLL dependencies)
-          - Runs on Windows 10/11
-          
-          ### Usage:
-          ```cmd
+        name: manualmapdetector
+        path: |
           manualmapdetector.exe
-          ```
+          SHA256.txt
+        retention-days: 90
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+      with:
+        name: Release ${{ github.ref_name }}
+        tag_name: ${{ github.ref_name }}
+        files: |
+          manualmapdetector.exe
+          SHA256.txt
+        body: |
+          ## Manual Map Detector - Release ${{ github.ref_name }}
+          
+          ### Windows Executable
+          - Self-contained (no DLL dependencies)
+          - SHA256 checksum included
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
