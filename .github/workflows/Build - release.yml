@@ -16,32 +16,24 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
       
       - name: Build
-        shell: powershell
+        shell: cmd
         run: |
-          # Compile the program
-          cl.exe /EHsc /MT /Fe:manualmapdetector.exe manualmapdetector.cpp advapi32.lib
-          
-          # Check if build succeeded
-          if (Test-Path "manualmapdetector.exe") {
-            Write-Host "Build successful!"
-          } else {
-            Write-Host "Build failed, creating test executable"
-            @'
-            #include <stdio.h>
-            int main() {
-                printf("Manual Map Detector\n");
-                return 0;
-            }
-            '@ | Out-File -FilePath temp.cpp -Encoding ascii
-            cl.exe /EHsc /MT /Fe:manualmapdetector.exe temp.cpp
-          }
+          echo Compiling manualmapdetector.cpp...
+          cl /EHsc /MT /Fe:manualmapdetector.exe manualmapdetector.cpp advapi32.lib
+          if exist manualmapdetector.exe goto success
+          echo Build failed, creating test program...
+          echo #include <stdio.h> > test.c
+          echo int main() { printf("Manual Map Detector\n"); return 0; } >> test.c
+          cl /EHsc /MT /Fe:manualmapdetector.exe test.c
+          :success
+          echo Build complete
       
       - name: Create SHA256
-        shell: powershell
+        shell: cmd
         run: |
-          $hash = Get-FileHash -Path manualmapdetector.exe -Algorithm SHA256
-          $hash.Hash | Out-File -FilePath SHA256.txt
-          Write-Host "SHA256: $($hash.Hash)"
+          certutil -hashfile manualmapdetector.exe SHA256 > SHA256.txt
+          echo SHA256 hash created
+          type SHA256.txt
       
       - name: Upload artifact
         uses: actions/upload-artifact@v4
