@@ -1,31 +1,21 @@
-name: Build
+name: Docker Build
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*'
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install MinGW
+      - name: Build with Docker
         run: |
-          choco install mingw -y
-          echo "C:\mingw64\bin" >> $env:GITHUB_PATH
-      
-      - name: Compile
-        run: g++ -static -o manualmapdetector.exe manualmapdetector.cpp
-      
-      - name: Create SHA256
-        run: |
-          certutil -hashfile manualmapdetector.exe SHA256 > sha256.txt
+          docker run --rm -v "$(pwd)":/src -w /src gcc:latest sh -c "
+            apt-get update && apt-get install -y mingw-w64 &&
+            x86_64-w64-mingw32-g++ -static -o manualmapdetector.exe manualmapdetector.cpp
+          "
       
       - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            manualmapdetector.exe
-            sha256.txt
+          files: manualmapdetector.exe
