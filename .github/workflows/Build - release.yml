@@ -1,21 +1,109 @@
-name: Docker Build
+name: Build and Release
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: Build on Windows
+    runs-on: windows-latest
+    
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Build with Docker
-        run: |
-          docker run --rm -v "$(pwd)":/src -w /src gcc:latest sh -c "
-            apt-get update && apt-get install -y mingw-w64 &&
-            x86_64-w64-mingw32-g++ -static -o manualmapdetector.exe manualmapdetector.cpp
-          "
-      
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: manualmapdetector.exe
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+    
+    - name: Display directory structure (debug)
+      run: |
+        dir
+        echo "---"
+        dir /s *.cpp *.c *.h *.hpp 2>nul || echo "No source files found"
+    
+    - name: Create CMakeLists.txt if missing
+      run: |
+        if not exist CMakeLists.txt (
+          echo cmake_minimum_required(VERSION 3.10) > CMakeLists.txt
+          echo project(Manualmapdetector) >> CMakeLists.txt
+          echo set(CMAKE_CXX_STANDARD 17) >> CMakeLists.txt
+          echo set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT") >> CMakeLists.txt
+          echo file(GLOB SOURCES "*.cpp" "*.c") >> CMakeLists.txt
+          echo file(GLOB HEADERS "*.h" "*.hpp") >> CMakeLists.txt
+          echo if(SOURCES) >> CMakeLists.txt
+          echo   add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS}) >> CMakeLists.txt
+          echo else() >> CMakeLists.txt
+          echo   message(FATAL_ERROR "No source files found!") >> CMakeLists.txt
+          echo endif() >> CMakeLists.txt
+          echo "Created CMakeLists.txt"
+        ) else (
+          echo "CMakeLists.txt already exists"
+        )
+    
+    - name: Configure CMake
+      run: |
+        mkdir build 2>nul
+        cd build
+        cmake .. -G "Visual Studio 17 2022" -A x64
+      shell: cmd
+    
+    - name: Build project
+      run: |
+        cd build
+        cmake --build . --config Release
+      shell: cmd
+    
+    - name: Find executable
+      id: find_exe
+      run: |
+        cd build
+        for /r %%i in (*.exe) do (
+          echo "Found: %%i"
+          echo "EXE_PATH=%%i" >> %GITHUB_ENV%
+          echo "EXE_NAME=%%~nxi" >> %GITHUB_ENV%
+          goto :found
+        )
+        echo "No executable found!"
+        exit /b 1
+        :found
+      shell: cmd
+    
+    - name: Create standalone directory
+      run: |
+        mkdir standalone
+        copy "%EXE_PATH%" "standalone\%EXE_NAME%"
+        echo "Copied executable"
+      shell: cmd
+    
+    - name: Compute SHA256
+      run: |
+        certutil -hashfile "standalone\%EXE_NAME%" SHA256 > standalone\SHA256.txt
+        type standalone\SHA256.txt
+      shell: cmd
+    
+    - name: Upload artifact (for debugging)
+      uses: actions/upload-artifact@v4
+      with:
+        name: standalone-executable
+        path: standalone/
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        name: Release ${{ github.ref_name }}
+        draft: false
+        prerelease: false
+        files: |
+          standalone/${{ env.EXE_NAME }}
+          standalone/SHA256.txt
+        body: |
+          ## Release ${{ github.ref_name }}
+          
+          ### Self-contained Windows executable
+          - SHA256 checksum included
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
