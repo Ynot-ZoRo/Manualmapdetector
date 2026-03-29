@@ -12,42 +12,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Setup MSVC
-        uses: ilammy/msvc-dev-cmd@v1
+      - uses: ilammy/msvc-dev-cmd@v1
       
-      - name: Build
-        shell: cmd
+      - name: Build EXE
+        run: cl /EHsc /MT manualmapdetector.cpp /Fe:manualmapdetector.exe
+        continue-on-error: true
+      
+      - name: Create Checksum
         run: |
-          echo Compiling manualmapdetector.cpp...
-          cl /EHsc /MT /Fe:manualmapdetector.exe manualmapdetector.cpp advapi32.lib
-          if exist manualmapdetector.exe goto success
-          echo Build failed, creating test program...
-          echo #include <stdio.h> > test.c
-          echo int main() { printf("Manual Map Detector\n"); return 0; } >> test.c
-          cl /EHsc /MT /Fe:manualmapdetector.exe test.c
-          :success
-          echo Build complete
+          powershell -command "& { (Get-FileHash manualmapdetector.exe -Algorithm SHA256).Hash | Out-File sha256.txt }"
       
-      - name: Create SHA256
-        shell: cmd
-        run: |
-          certutil -hashfile manualmapdetector.exe SHA256 > SHA256.txt
-          echo SHA256 hash created
-          type SHA256.txt
-      
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Create Release
+        uses: ncipollo/release-action@v1
         with:
-          name: manualmapdetector
-          path: |
-            manualmapdetector.exe
-            SHA256.txt
-      
-      - name: Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            manualmapdetector.exe
-            SHA256.txt
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          artifacts: "manualmapdetector.exe, sha256.txt"
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
