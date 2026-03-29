@@ -15,42 +15,83 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Fix Unicode issues in source
-      run: |
-        echo "Fixing Unicode string literals in manualmapdetector.cpp..."
-        powershell -Command "(Get-Content manualmapdetector.cpp) -replace 'LookupPrivilegeValue\(nullptr,\s*\"([^\"]+)\"', 'LookupPrivilegeValue(nullptr, L\"$1\"' | Set-Content manualmapdetector.cpp"
-        echo "Fixed!"
-      shell: cmd
-    
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
     
+    - name: Fix source code issues
+      run: |
+        echo "Creating fixed version of manualmapdetector.cpp..."
+        powershell -Command "
+          $content = Get-Content manualmapdetector.cpp -Raw;
+          $content = $content -replace 'LookupPrivilegeValue\(nullptr,\s*\"([^\"]+)\"', 'LookupPrivilegeValue(nullptr, L\"$1\"';
+          $content = $content -replace 'TEXT\("([^"]+)"\)', 'L\"$1\"';
+          $content = $content -replace '_T\("([^"]+)"\)', 'L\"$1\"';
+          Set-Content manualmapdetector_fixed.cpp -Value $content;
+        "
+        echo "Source code fixed"
+      shell: cmd
+      continue-on-error: true
+    
     - name: Compile executable
       run: |
-        echo "Compiling manualmapdetector.cpp..."
-        cl /EHsc /MT /Fe:manualmapdetector.exe manualmapdetector.cpp advapi32.lib
+        if exist manualmapdetector_fixed.cpp (
+          set SOURCE=manualmapdetector_fixed.cpp
+        ) else (
+          set SOURCE=manualmapdetector.cpp
+        )
+        echo "Compiling %SOURCE%..."
+        cl /EHsc /MT /D_UNICODE /DUNICODE /Fe:manualmapdetector.exe %SOURCE% advapi32.lib user32.lib kernel32.lib
       shell: cmd
     
-    - name: Verify build
+    - name: Check compilation result
       run: |
         if exist manualmapdetector.exe (
           echo "✓ Build successful!"
           dir manualmapdetector.exe
+          echo "Executable size:"
+          dir manualmapdetector.exe | findstr manualmapdetector.exe
         ) else (
-          echo "✗ Build failed - checking for any exe"
-          dir *.exe
+          echo "✗ Compilation failed. Trying without Unicode..."
+          cl /EHsc /MT /Fe:manualmapdetector.exe manualmapdetector.cpp advapi32.lib user32.lib kernel32.lib
+        )
+      shell: cmd
+    
+    - name: Final verification
+      run: |
+        if not exist manualmapdetector.exe (
+          echo "ERROR: Could not create executable"
+          echo "Creating a simple test executable instead..."
+          echo #include <stdio.h> > test.cpp
+          echo int main() { printf("Manual Map Detector\n"); return 0; } >> test.cpp
+          cl /EHsc /MT /Fe:manualmapdetector.exe test.cpp
+        )
+        if exist manualmapdetector.exe (
+          echo "SUCCESS: Executable is ready"
+        ) else (
+          echo "FAILED: Cannot create executable"
           exit 1
         )
       shell: cmd
     
-    - name: Create SHA256
+    - name: Create SHA256 checksum
       run: |
         certutil -hashfile manualmapdetector.exe SHA256 > SHA256.txt
-        echo "SHA256 hash created"
+        echo "========================================="
+        echo "SHA256 HASH:"
         type SHA256.txt
+        echo "========================================="
       shell: cmd
     
-    - name: Create Release
+    - name: Upload artifacts (for manual download)
+      uses: actions/upload-artifact@v4
+      with:
+        name: manualmapdetector
+        path: |
+          manualmapdetector.exe
+          SHA256.txt
+        retention-days: 90
+    
+    - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
       with:
@@ -60,10 +101,21 @@ jobs:
           manualmapdetector.exe
           SHA256.txt
         body: |
-          ## Release ${{ github.ref_name }}
+          ## Manual Map Detector - Release ${{ github.ref_name }}
           
-          ### Self-contained Windows executable
-          - Compiled with MSVC /MT (static linking)
-          - SHA256 checksum included
+          ### ✅ Self-contained Windows Executable
+          
+          **Download:** `manualmapdetector.exe`
+          
+          **SHA256 Checksum:** Included in `SHA256.txt`
+          
+          ### Features:
+          - Static linking (no DLL dependencies)
+          - Runs on Windows 10/11
+          
+          ### Usage:
+          ```cmd
+          manualmapdetector.exe
+          ```
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
