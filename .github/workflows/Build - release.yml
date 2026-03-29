@@ -1,0 +1,88 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags like v1.0.0
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build:
+    name: Build on Windows
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up MSVC environment
+      uses: ilammy/msvc-dev-cmd@v1
+    
+    - name: Build project
+      run: |
+        mkdir build
+        cd build
+        cmake .. -G "Visual Studio 17 2022" -A x64
+        cmake --build . --config Release
+    
+    - name: Find executable
+      id: find_exe
+      run: |
+        # Look for .exe files in build directory
+        $exe = Get-ChildItem -Path .\build -Recurse -Filter *.exe | Select-Object -First 1
+        if ($exe) {
+          echo "EXE_PATH=$($exe.FullName)" >> $env:GITHUB_ENV
+          echo "EXE_NAME=$($exe.Name)" >> $env:GITHUB_ENV
+          echo "Found executable: $($exe.Name)"
+        } else {
+          echo "No executable found!"
+          exit 1
+        }
+    
+    - name: Create standalone executable directory
+      run: |
+        mkdir standalone
+        # Copy the executable
+        Copy-Item "$env:EXE_PATH" -Destination "standalone\$env:EXE_NAME"
+        
+        # Copy required DLLs if any (adjust as needed)
+        # Get the directory of the executable
+        $exeDir = Split-Path "$env:EXE_PATH" -Parent
+        
+        # Find and copy common runtime DLLs
+        $vcRedistDir = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Redist\MSVC\*\x64\Microsoft.VC143.CRT\"
+        if (Test-Path $vcRedistDir) {
+          Copy-Item "$vcRedistDir\*.dll" -Destination "standalone\" -ErrorAction SilentlyContinue
+        }
+        
+        echo "Standalone files created in standalone directory"
+    
+    - name: Compute SHA256
+      run: |
+        $hash = Get-FileHash -Path "standalone\$env:EXE_NAME" -Algorithm SHA256
+        $hash.Hash | Out-File -FilePath "standalone\SHA256.txt" -Encoding UTF8
+        echo "SHA256 hash: $($hash.Hash)"
+    
+    - name: Create Release
+      id: create_release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: Release ${{ github.ref_name }}
+        draft: false
+        prerelease: false
+        files: |
+          standalone/${{ env.EXE_NAME }}
+          standalone/SHA256.txt
+        body: |
+          ## Release ${{ github.ref_name }}
+          
+          ### Changes in this release:
+          - Self-contained executable for Windows x64
+          - SHA256 checksum included
+          
+          ### Installation:
+          1. Download `${{ env.EXE_NAME }}`
+          2. Verify integrity with SHA256.txt
+          3. Run the executable
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
