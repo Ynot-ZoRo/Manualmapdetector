@@ -15,78 +15,43 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
+    - name: Fix Unicode issues in source
+      run: |
+        echo "Fixing Unicode string literals..."
+        powershell -Command "(Get-Content manualmpdetector.cpp) -replace 'LookupPrivilegeValue\(nullptr,\s*\"([^\"]+)\"', 'LookupPrivilegeValue(nullptr, L\"$1\"' | Set-Content manualmpdetector.cpp"
+        echo "Fixed!"
+      shell: cmd
+    
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
     
     - name: Compile executable
       run: |
-        echo "Looking for source files..."
-        dir *.cpp *.c 2>nul
-        cl /EHsc /MT /Fe:Manualmapdetector.exe *.cpp *.c 2>nul
+        echo "Compiling..."
+        cl /EHsc /MT /D_UNICODE /DUNICODE /Fe:manualmpdetector.exe manualmpdetector.cpp advapi32.lib
       shell: cmd
-      continue-on-error: true
     
-    - name: Check for existing exe
+    - name: Verify build
       run: |
-        if exist Manualmapdetector.exe (
-          echo "Build successful!"
-          dir Manualmapdetector.exe
+        if exist manualmpdetector.exe (
+          echo "✓ Build successful!"
+          dir manualmpdetector.exe
         ) else (
-          echo "No Manualmapdetector.exe found, looking for any exe..."
-          dir *.exe
-          for %%i in (*.exe) do (
-            echo "Found: %%i"
-            copy "%%i" Manualmapdetector.exe
-          )
+          echo "✗ Build failed"
+          exit 1
         )
-      shell: cmd
-    
-    - name: Verify executable exists
-      run: |
-        if not exist *.exe (
-          echo "ERROR: No executable found!"
-          echo "Creating a test executable..."
-          echo #include <stdio.h> > test.cpp
-          echo int main() { printf("Hello World\n"); return 0; } >> test.cpp
-          cl /EHsc /MT /Fe:Manualmapdetector.exe test.cpp
-        )
-      shell: cmd
-    
-    - name: Get executable name
-      id: get_exe
-      run: |
-        for %%i in (*.exe) do (
-          echo "exe_name=%%i" >> %GITHUB_OUTPUT%
-          echo "Found executable: %%i"
-          goto :done
-        )
-        :done
       shell: cmd
     
     - name: Create SHA256
       run: |
-        certutil -hashfile "%{{ steps.get_exe.outputs.exe_name }}" SHA256 > SHA256.txt
-        type SHA256.txt
-      shell: cmd
+        certutil -hashfile manualmpdetector.exe SHA256 > SHA256.txt
     
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
         name: Release ${{ github.ref_name }}
-        tag_name: ${{ github.ref_name }}
         files: |
-          ${{ steps.get_exe.outputs.exe_name }}
+          manualmpdetector.exe
           SHA256.txt
-        body: |
-          ## Release ${{ github.ref_name }}
-          
-          ### Self-contained Windows executable
-          - Built with MSVC /MT (static linking)
-          - SHA256 checksum included
-          
-          ### How to use:
-          1. Download the executable
-          2. Verify integrity with SHA256.txt
-          3. Run the program
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
