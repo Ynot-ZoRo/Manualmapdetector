@@ -1,4 +1,4 @@
-name: Build and Release
+name: Release Existing Executable
 
 on:
   push:
@@ -7,68 +7,42 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    name: Build on Windows
-    runs-on: windows-latest
+  release:
+    runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout code
+    - name: Checkout
       uses: actions/checkout@v4
     
-    - name: Setup MSVC
-      uses: ilammy/msvc-dev-cmd@v1
-    
-    - name: Compile executable
-      run: |
-        dir *.cpp *.c 2>nul
-        cl /EHsc /MT /Fe:Manualmapdetector.exe *.cpp *.c 2>nul
-      shell: cmd
-    
-    - name: Check if compiled
-      run: |
-        if exist Manualmapdetector.exe (
-          echo Build successful!
-          dir Manualmapdetector.exe
-        ) else (
-          echo No .exe found - checking for existing exe
-          dir *.exe
-        )
-      shell: cmd
-    
-    - name: Find any exe file
+    - name: Find exe files
       id: find_exe
       run: |
-        for %%i in (*.exe) do (
-          echo "EXE_NAME=%%i" >> %GITHUB_ENV%
-          echo "Found: %%i"
-          goto :done
-        )
-        echo "ERROR: No executable found!"
-        exit /b 1
-        :done
-      shell: cmd
+        exe_file=$(find . -name "*.exe" -type f | head -1)
+        if [ -n "$exe_file" ]; then
+          echo "EXE_PATH=$exe_file" >> $GITHUB_ENV
+          echo "EXE_NAME=$(basename "$exe_file")" >> $GITHUB_ENV
+          echo "Found: $exe_file"
+        else
+          echo "No exe files found in repository!"
+          exit 1
+        fi
     
     - name: Create SHA256
       run: |
-        certutil -hashfile "%EXE_NAME%" SHA256 > SHA256.txt
-        echo "SHA256 hash created"
-      shell: cmd
+        sha256sum "${{ env.EXE_PATH }}" > SHA256.txt
     
     - name: Create Release
       uses: softprops/action-gh-release@v2
-      if: startsWith(github.ref, 'refs/tags/')
       with:
         name: Release ${{ github.ref_name }}
         files: |
-          ${{ env.EXE_NAME }}
+          ${{ env.EXE_PATH }}
           SHA256.txt
         body: |
           ## Release ${{ github.ref_name }}
           
-          ### Self-contained Windows executable
-          - Built with MSVC /MT (static linking)
-          - SHA256 checksum included
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}          - SHA256 checksum included
+          ### Files included:
+          - Executable: `${{ env.EXE_NAME }}`
+          - SHA256 checksum
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
