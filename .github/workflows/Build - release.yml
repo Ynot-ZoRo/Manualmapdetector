@@ -1,4 +1,4 @@
-name: Build Static EXE
+name: Build and Release ZIP
 
 on:
   push:
@@ -13,25 +13,22 @@ jobs:
     - name: Checkout repo
       uses: actions/checkout@v4
 
-    - name: Setup MinGW
-      uses: egor-tensin/setup-mingw@v2
-      with:
-        platform: x64
-
-    - name: Compile static EXE
+    - name: Compile EXE
       run: |
-        g++ manualmapdetector.cpp -o manualmapdetector.exe ^
-        -static -static-libgcc -static-libstdc++ -s
+        g++ manualmapdetector.cpp -o manualmapdetector.exe
 
-    - name: Upload EXE artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: manualmapdetector
-        path: manualmapdetector.exe
+    - name: Create release folder
+      run: |
+        mkdir release
+        copy manualmapdetector.exe release\
 
-    - name: Create Release & Upload EXE
+    - name: Zip release folder
+      run: |
+        powershell Compress-Archive -Path release\* -DestinationPath manualmapdetector.zip
+
+    - name: Upload ZIP to Release
       uses: softprops/action-gh-release@v2
       with:
-        files: manualmapdetector.exe
+        files: manualmapdetector.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
