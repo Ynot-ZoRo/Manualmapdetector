@@ -13,12 +13,14 @@ jobs:
     - name: Checkout repo
       uses: actions/checkout@v4
 
-    - name: Setup MinGW
-      uses: egor-tensin/setup-mingw@v2
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
       with:
-        platform: x64
+        update: true
+        install: mingw-w64-x86_64-gcc
 
     - name: Compile EXE
+      shell: msys2 {0}
       run: g++ manualmapdetector.cpp -o manualmapdetector.exe -lwintrust -liphlpapi -lws2_32 -mconsole
 
     - name: Create release folder
