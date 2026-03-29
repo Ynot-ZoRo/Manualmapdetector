@@ -1,3 +1,6 @@
+ections (IPv4)\n");
+    return 0;
+}
 // PIDsDetectorPro.cpp by Ynot-ZoRo
 //
 // Escanea todos los procesos accesibles y les asigna una puntuación basada en múltiples
@@ -25,6 +28,7 @@
 #include <wincrypt.h>
 #include <cstdint>
 #include <cstdio>
+#include <cstdarg>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -47,7 +51,8 @@ static PFN_NtQueryInformationThread g_NtQueryInformationThread = nullptr;
 // Console output helper
 static void Printf(const char* fmt, ...) {
     char buf[4096];
-    va_list ap; va_start(ap, fmt);
+    va_list ap;
+    va_start(ap, fmt);
     _vsnprintf_s(buf, sizeof(buf), _TRUNCATE, fmt, ap);
     va_end(ap);
     DWORD written;
@@ -60,11 +65,11 @@ static void EnableDebugPrivilege() {
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken))
         return;
     TOKEN_PRIVILEGES tp{};
-    if (!LookupPrivilegeValueW(nullptr, SE_DEBUG_NAME, &tp.Privileges[0].Luid)) {
+    tp.PrivilegeCount = 1;
+    if (!LookupPrivilegeValueW(nullptr, L"SeDebugPrivilege", &tp.Privileges[0].Luid)) {
         CloseHandle(hToken);
         return;
     }
-    tp.PrivilegeCount = 1;
     tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
     AdjustTokenPrivileges(hToken, FALSE, &tp, sizeof(tp), nullptr, nullptr);
     CloseHandle(hToken);
@@ -130,11 +135,13 @@ struct ModuleInfo {
 // Enumerate modules of a process (all types)
 static std::vector<ModuleInfo> EnumModules(HANDLE hp) {
     std::vector<ModuleInfo> v;
-    HMODULE list[1024]; DWORD needed = 0;
+    HMODULE list[1024];
+    DWORD needed = 0;
     if (!EnumProcessModulesEx(hp, list, sizeof(list), &needed, LIST_MODULES_ALL))
         return v;
     size_t count = needed / sizeof(HMODULE);
-    wchar_t nameBuf[MAX_PATH], pathBuf[MAX_PATH]; MODULEINFO mi{};
+    wchar_t nameBuf[MAX_PATH], pathBuf[MAX_PATH];
+    MODULEINFO mi{};
     for (size_t i = 0; i < count; ++i) {
         if (!GetModuleInformation(hp, list[i], &mi, sizeof(mi)))
             continue;
@@ -174,6 +181,7 @@ static void InitBaselines() {
     if (!hNt) hNt = LoadLibraryW(L"ntdll.dll");
     HMODULE hK32 = GetModuleHandleW(L"kernel32.dll");
     if (!hK32) hK32 = LoadLibraryW(L"kernel32.dll");
+    
     // ntdll functions of interest (syscalls)
     const char* ntList[] = {
         "NtAllocateVirtualMemory", "NtProtectVirtualMemory", "NtCreateThreadEx",
@@ -185,17 +193,22 @@ static void InitBaselines() {
     for (auto name : ntList) {
         FARPROC fp = GetProcAddress(hNt, name);
         if (!fp) continue;
-        FuncBaseline f; f.offset = (size_t)((uint8_t*)fp - (uint8_t*)hNt);
+        FuncBaseline f;
+        f.offset = (size_t)((uint8_t*)fp - (uint8_t*)hNt);
         f.name = name;
-        memcpy(f.bytes, fp, sizeof(f.bytes));
+        // FIX: Cast FARPROC to void* for memcpy
+        memcpy(f.bytes, (void*)fp, sizeof(f.bytes));
         g_NtFuncs.push_back(f);
     }
+    
     // Baseline for EtwEventWrite
     FARPROC etw = GetProcAddress(hNt, "EtwEventWrite");
     if (etw) {
         g_EtwOffset = (size_t)((uint8_t*)etw - (uint8_t*)hNt);
-        memcpy(g_EtwBaseline, etw, sizeof(g_EtwBaseline));
+        // FIX: Cast FARPROC to void* for memcpy
+        memcpy(g_EtwBaseline, (void*)etw, sizeof(g_EtwBaseline));
     }
+    
     // kernel32 functions (injection primitives)
     const char* k32List[] = {
         "CreateRemoteThread", "WriteProcessMemory", "ReadProcessMemory",
@@ -205,11 +218,14 @@ static void InitBaselines() {
     for (auto name : k32List) {
         FARPROC fp = GetProcAddress(hK32, name);
         if (!fp) continue;
-        FuncBaseline f; f.offset = (size_t)((uint8_t*)fp - (uint8_t*)hK32);
+        FuncBaseline f;
+        f.offset = (size_t)((uint8_t*)fp - (uint8_t*)hK32);
         f.name = name;
-        memcpy(f.bytes, fp, sizeof(f.bytes));
+        // FIX: Cast FARPROC to void* for memcpy
+        memcpy(f.bytes, (void*)fp, sizeof(f.bytes));
         g_K32Funcs.push_back(f);
     }
+    
     // AMSI functions
     HMODULE hAmsi = LoadLibraryW(L"amsi.dll");
     if (hAmsi) {
@@ -219,12 +235,15 @@ static void InitBaselines() {
         for (auto name : amsiList) {
             FARPROC fp = GetProcAddress(hAmsi, name);
             if (!fp) continue;
-            FuncBaseline f; f.offset = (size_t)((uint8_t*)fp - (uint8_t*)hAmsi);
+            FuncBaseline f;
+            f.offset = (size_t)((uint8_t*)fp - (uint8_t*)hAmsi);
             f.name = name;
-            memcpy(f.bytes, fp, sizeof(f.bytes));
+            // FIX: Cast FARPROC to void* for memcpy
+            memcpy(f.bytes, (void*)fp, sizeof(f.bytes));
             g_AmsiFuncs.push_back(f);
         }
     }
+    
     // Debug-related functions
     const char* dbgList[] = {
         "DbgUiRemoteBreakin", "DbgBreakPoint", "KiUserExceptionDispatcher"
@@ -232,9 +251,11 @@ static void InitBaselines() {
     for (auto name : dbgList) {
         FARPROC fp = GetProcAddress(hNt, name); // all in ntdll
         if (!fp) continue;
-        FuncBaseline f; f.offset = (size_t)((uint8_t*)fp - (uint8_t*)hNt);
+        FuncBaseline f;
+        f.offset = (size_t)((uint8_t*)fp - (uint8_t*)hNt);
         f.name = name;
-        memcpy(f.bytes, fp, sizeof(f.bytes));
+        // FIX: Cast FARPROC to void* for memcpy
+        memcpy(f.bytes, (void*)fp, sizeof(f.bytes));
         g_DbgFuncs.push_back(f);
     }
 }
@@ -298,7 +319,8 @@ static Heuristics AnalyzeProcess(DWORD pid, const std::wstring& exePath, HANDLE 
                     continue;
                 HANDLE th = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, te.th32ThreadID);
                 if (th) {
-                    PVOID start = nullptr; ULONG ret = 0;
+                    PVOID start = nullptr;
+                    ULONG ret = 0;
                     if (g_NtQueryInformationThread(th, (THREADINFOCLASS)9,
                         &start, sizeof(start), &ret) == 0 && start) {
                         uintptr_t sa = (uintptr_t)start;
@@ -312,7 +334,8 @@ static Heuristics AnalyzeProcess(DWORD pid, const std::wstring& exePath, HANDLE 
         CloseHandle(tsnap);
     }
     // Memory scan: count private exec/RWX pages and PE headers
-    SYSTEM_INFO si; GetNativeSystemInfo(&si);
+    SYSTEM_INFO si;
+    GetNativeSystemInfo(&si);
     uintptr_t a = (uintptr_t)si.lpMinimumApplicationAddress;
     uintptr_t max = (uintptr_t)si.lpMaximumApplicationAddress;
     MEMORY_BASIC_INFORMATION mbi{};
@@ -375,7 +398,7 @@ static Heuristics AnalyzeProcess(DWORD pid, const std::wstring& exePath, HANDLE 
                     counter++;
             }
         }
-        };
+    };
     // ntdll/k32 hooks
     checkHooks(ntmod, g_NtFuncs, h.hooks);
     checkHooks(k32mod, g_K32Funcs, h.hooks);
@@ -477,7 +500,8 @@ int wmain(int argc, wchar_t** argv) {
         if (!hp) continue;
         wchar_t exePath[MAX_PATH]{};
         if (!GetModuleFileNameExW(hp, nullptr, exePath, MAX_PATH)) {
-            CloseHandle(hp); continue;
+            CloseHandle(hp);
+            continue;
         }
         wchar_t baseName[MAX_PATH]{};
         GetModuleBaseNameW(hp, nullptr, baseName, MAX_PATH);
@@ -492,7 +516,7 @@ int wmain(int argc, wchar_t** argv) {
     }
     std::sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) {
         return a.score > b.score;
-        });
+    });
     // Print top results
     Printf("\nPID     Score  Nombre                     privX rwx peHdr hilosOut Hooks Etw Amsi Dbg Unsig OffP ModsU NoPath Conn\n");
     for (size_t i = 0; i < rows.size() && i < 20; ++i) {
