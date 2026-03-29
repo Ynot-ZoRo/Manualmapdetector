@@ -1,0 +1,36 @@
+name: Build EXE + SHA256
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Compile EXE
+      run: |
+        g++ -static -static-libgcc -static-libstdc++ manualmapdetector.cpp -o manualmapdetector.exe
+
+    - name: Generate SHA256
+      run: |
+        $hash = (Get-FileHash manualmapdetector.exe -Algorithm SHA256).Hash
+        "$hash  manualmapdetector.exe" | Out-File manualmapdetector.exe.sha256
+
+    - name: Upload EXE to Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: manualmapdetector.exe
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload SHA256 to Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: manualmapdetector.exe.sha256
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
