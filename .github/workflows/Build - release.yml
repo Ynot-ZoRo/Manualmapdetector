@@ -15,23 +15,30 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Fix Unicode issues in source
-      run: |
-        echo "Fixing Unicode string literals..."
-        powershell -Command "(Get-Content manualmpdetector.cpp) -replace 'LookupPrivilegeValue\(nullptr,\s*\"([^\"]+)\"', 'LookupPrivilegeValue(nullptr, L\"$1\"' | Set-Content manualmpdetector.cpp"
-        echo "Fixed!"
-      shell: cmd
-    
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
     
-    - name: Compile executable
+    - name: Compile executable with correct settings
       run: |
-        echo "Compiling..."
-        cl /EHsc /MT /D_UNICODE /DUNICODE /Fe:manualmpdetector.exe manualmpdetector.cpp advapi32.lib
+        echo "Compiling manualmpdetector.cpp..."
+        cl /EHsc /MT /D_UNICODE /DUNICODE /Fe:manualmpdetector.exe manualmpdetector.cpp
       shell: cmd
     
-    - name: Verify build
+    - name: Try alternative compilation if failed
+      if: failure()
+      run: |
+        echo "Trying with different settings..."
+        cl /EHsc /MT /D_UNICODE /Fe:manualmpdetector.exe manualmpdetector.cpp /link user32.lib advapi32.lib
+      shell: cmd
+    
+    - name: Try without Unicode
+      if: failure()
+      run: |
+        echo "Trying without Unicode..."
+        cl /EHsc /MT /Fe:manualmpdetector.exe manualmpdetector.cpp
+      shell: cmd
+    
+    - name: Check if compiled successfully
       run: |
         if exist manualmpdetector.exe (
           echo "✓ Build successful!"
@@ -45,13 +52,27 @@ jobs:
     - name: Create SHA256
       run: |
         certutil -hashfile manualmpdetector.exe SHA256 > SHA256.txt
+        echo "SHA256 hash created"
+        type SHA256.txt
+      shell: cmd
     
     - name: Create Release
       uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
       with:
         name: Release ${{ github.ref_name }}
+        tag_name: ${{ github.ref_name }}
         files: |
           manualmpdetector.exe
           SHA256.txt
+        body: |
+          ## Release ${{ github.ref_name }}
+          
+          ### Self-contained Windows executable
+          - Compiled with MSVC /MT (static linking)
+          - SHA256 checksum included
+          
+          ### Usage:
+          Run `manualmpdetector.exe` from command line
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
