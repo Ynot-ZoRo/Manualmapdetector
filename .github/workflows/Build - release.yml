@@ -13,16 +13,14 @@ jobs:
     - name: Checkout repo
       uses: actions/checkout@v4
 
-    - name: Setup MinGW (g++)
+    - name: Setup MinGW
       uses: egor-tensin/setup-mingw@v2
       with:
         platform: x64
 
     - name: Compile EXE
-  run: |
-    g++ manualmapdetector.cpp -o manualmapdetector.exe ^
-    -lwintrust -liphlpapi -lws2_32 -mconsole
-    
+      run: g++ manualmapdetector.cpp -o manualmapdetector.exe -lwintrust -liphlpapi -lws2_32 -mconsole
+
     - name: Create release folder
       run: |
         mkdir release
