@@ -1,31 +1,37 @@
 name: Build and Release
 
 on:
-  workflow_dispatch:
   push:
     tags:
-      - 'v*'
+      - 'v*' # Triggers only when you push a tag like v1.0.0
+  workflow_dispatch: # Allows you to run this manually from the Actions tab
 
 jobs:
   build:
     runs-on: windows-latest
+
     steps:
-      - uses: actions/checkout@v4
-      
-      - uses: ilammy/msvc-dev-cmd@v1
-      
-      - name: Build EXE
-        run: cl /EHsc /MT manualmapdetector.cpp /Fe:manualmapdetector.exe
-        continue-on-error: true
-      
-      - name: Create Checksum
-        run: |
-          powershell -command "& { (Get-FileHash manualmapdetector.exe -Algorithm SHA256).Hash | Out-File sha256.txt }"
-      
-      - name: Create Release
-        uses: ncipollo/release-action@v1
-        with:
-          artifacts: "manualmapdetector.exe, sha256.txt"
-          token: ${{ secrets.GITHUB_TOKEN }}
-          tag: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }}
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Compile Executable
+      run: |
+        cl.exe /EHsc /O2 /MT manualmapdetector.cpp /Fe:manualmapdetector.exe
+      # /MT links the C Runtime statically so it's a self-contained .exe
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: manualmapdetector-exe
+        path: manualmapdetector.exe
+
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: manualmapdetector.exe
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
