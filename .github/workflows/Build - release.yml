@@ -3,7 +3,7 @@ name: Build and Release ZIP
 on:
   push:
     tags:
-      - 'v*'   # triggers on version tags like v1.0
+      - 'v*'
 
 jobs:
   build:
@@ -12,6 +12,11 @@ jobs:
     steps:
     - name: Checkout repo
       uses: actions/checkout@v4
+
+    - name: Setup MinGW (g++)
+      uses: egor-tensin/setup-mingw@v2
+      with:
+        platform: x64
 
     - name: Compile EXE
       run: |
