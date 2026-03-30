@@ -1,0 +1,44 @@
+name: Build ManualMapDetector
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  release:
+    types: [created]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Setup MSVC environment
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+    
+    - name: Configure CMake
+      run: cmake -B build -G "Visual Studio 17 2022" -A x64
+    
+    - name: Build project
+      run: cmake --build build --config Release
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ManualMapDetector
+        path: build/bin/Release/ManualMapDetector.exe
+    
+    - name: Upload to release
+      if: github.event_name == 'release'
+      uses: svenstaro/upload-release-action@v2
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: build/bin/Release/ManualMapDetector.exe
+        asset_name: ManualMapDetector.exe
+        tag: ${{ github.ref }}
+        overwrite: true
