@@ -16,6 +16,17 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
     
+    - name: Create src directory if it doesn't exist
+      run: |
+        if not exist src mkdir src
+        if exist manualmapdetector.cpp copy manualmapdetector.cpp src\manualmapdetector.cpp
+        if exist manualmapdetector.cpp del manualmapdetector.cpp
+      shell: cmd
+    
+    - name: List files for debugging
+      run: dir /s
+      shell: cmd
+    
     - name: Setup MSVC environment
       uses: ilammy/msvc-dev-cmd@v1
       with:
@@ -28,17 +39,7 @@ jobs:
       run: cmake --build build --config Release
     
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v3
       with:
         name: ManualMapDetector
         path: build/bin/Release/ManualMapDetector.exe
-    
-    - name: Upload to release
-      if: github.event_name == 'release'
-      uses: svenstaro/upload-release-action@v2
-      with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: build/bin/Release/ManualMapDetector.exe
-        asset_name: ManualMapDetector.exe
-        tag: ${{ github.ref }}
-        overwrite: true
